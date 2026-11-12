@@ -113,18 +113,26 @@ const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/
           formattingPreserved&&=JSON.stringify(numbers)===JSON.stringify(Array.from({length:60},(_,i)=>i+1));
         }
         const frames=[...host.querySelectorAll('.product-photo-frame')];
-        return {pages:pages.length,issues,textPreserved:description===expected,formattingPreserved,rows:host.querySelectorAll('.specs-table tbody tr').length,photos:frames.length,photosVisible:frames.every(frame=>{const r=frame.getBoundingClientRect();return r.width>1&&r.height>1})};
+        const summary=host.querySelector('[data-order-summary]');
+        const lastProduct=[...host.querySelectorAll('.kp-product-name')].at(-1);
+        const summaryAfterProducts=!!summary&&!!lastProduct&&!!(lastProduct.compareDocumentPosition(summary)&Node.DOCUMENT_POSITION_FOLLOWING);
+        return {pages:pages.length,issues,textPreserved:description===expected,formattingPreserved,rows:host.querySelectorAll('.specs-table tbody tr').length,photos:frames.length,photosVisible:frames.every(frame=>{const r=frame.getBoundingClientRect();return r.width>1&&r.height>1}),summaryText:summary?.textContent.replace(/\s+/g,' ').trim()||'',summaryAfterProducts};
       },config);
       console.log(name,JSON.stringify(result));
       if(artifacts&&name==='four-photos-tight-boundary')await page.locator('#qa-pages > .kp-page').first().screenshot({path:path.join(artifacts,baseline?'before.png':'after.png')});
       if(artifacts&&name==='large-photo-layout')await page.locator('#qa-pages > .kp-page').first().screenshot({path:path.join(artifacts,'large-photos.png')});
       if(artifacts&&config.rich)await page.locator('#qa-pages > .kp-page').nth(1).screenshot({path:path.join(artifacts,'formatted-page.png')});
+      if(artifacts&&config.multiple)await page.locator('#qa-pages > .kp-page').last().screenshot({path:path.join(artifacts,'equipment-summary.png')});
       assert.deepEqual(result.issues,[],name+' overlaps');
       assert.equal(result.textPreserved,true,name+' preserves description');
       assert.equal(result.rows,config.rows||0,name+' preserves rows');
       assert.equal(result.photos,config.photos||0,name+' preserves photos');
       assert.equal(result.photosVisible,true,name+' keeps photos visible');
       assert.equal(result.formattingPreserved,true,name+' keeps formatting and list numbering');
+      if(config.multiple){
+        assert.match(result.summaryText,/Итог по оборудованию.*Автоклав 300 литров.*90\s?000.*Второе оборудование.*500.*Общая сумма.*90\s?500/s,name+' renders equipment total');
+        assert.equal(result.summaryAfterProducts,true,name+' places total after all equipment');
+      }else assert.equal(result.summaryText,'',name+' hides total for one product');
     }
     await page.evaluate(async()=>{
       document.getElementById('qa-pages').remove();
@@ -156,7 +164,8 @@ const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/
       p.photoIds=[...ids,...await Promise.all(ids.map(async id=>savePhoto(await getPhoto(id))))];
       p.photoIds.forEach((id,i)=>{p.photoSizes[id]=82;p.photoPositions[id]={x:(i%2)*96,y:Math.floor(i/2)*99}});
       p.description='<p style="text-align:center"><b>Жирный экспорт</b></p><p><i>Курсив экспорт</i> <u>Подчеркнуто экспорт</u> <s>Зачеркнуто экспорт</s></p><p><strong>'+Array.from({length:250},(_,i)=>'слово'+i).join(' ')+'</strong></p>';
-      state.products=[p];await renderPreviewNow();
+      const second={...createProduct(),productName:'Второе оборудование для итога',price:'500',currency:'RUB'};
+      state.products=[p,second];await renderPreviewNow();
       window.pdfFormattingChecks=[];
       const render=window.html2canvas;
       window.html2canvas=(element,options)=>render(element,{...options,onclone:async doc=>{
@@ -179,6 +188,9 @@ const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/
       if(extension==='pdf')assert.ok((await page.evaluate(()=>window.pdfFormattingChecks)).includes('700'),'PDF rasterizes bold description');
       if(extension==='docx'){
         const xml=zipText(data,'word/document.xml');
+        assert.match(xml,/Итог по оборудованию/,'DOCX contains equipment total');
+        assert.match(xml,/Второе оборудование для итога/,'DOCX contains second equipment in total');
+        assert.match(xml,/90\s?500/,'DOCX contains total amount');
         const runs=xml.match(/<w:r>[\s\S]*?<\/w:r>/g)||[];
         for(const [text,style] of [['Жирный экспорт',/<w:b\b/],['Курсив экспорт',/<w:i\b/],['Подчеркнуто экспорт',/<w:u\b/],['Зачеркнуто экспорт',/<w:strike\b/]]){
           const run=runs.find(run=>run.includes(text));assert.ok(run&&style.test(run),'DOCX preserves '+text);

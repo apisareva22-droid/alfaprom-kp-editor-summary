@@ -30,7 +30,7 @@
   flex-direction:column;
   flex:none;
 }.kp-header{height:15mm;flex:none;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid var(--orange);margin-bottom:3mm}.kp-logo{display:block;width:auto;height:10.5mm;max-width:78mm;object-fit:contain}.kp-header-right{text-align:right;font-size:9.5px;line-height:1.3;color:#3f4348}.kp-header-phone{font-size:12px;font-weight:800;color:#202124}.kp-header-site{color:var(--orange);font-weight:700;text-decoration:none}.kp-title{font-size:20px;font-weight:800;margin-bottom:2.5mm;line-height:1.1}.kp-product-name{font-size:18px;font-weight:750;line-height:1.18;margin-bottom:3mm}
-.product-photo-grid{width:100%;display:flex;flex-wrap:wrap;align-items:flex-start;gap:4mm;margin-bottom:0}.product-photo-frame{flex:0 0 auto;border:1px solid #e0e2e5;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.product-photo-frame img{width:100%;height:100%;object-fit:contain;display:block;padding:2.5mm}.kp-description{font-size:12.2px;line-height:1.45;white-space:pre-wrap;margin-bottom:2.5mm}.kp-note{font-size:11.2px;color:#666;line-height:1.35;white-space:pre-wrap;margin-bottom:2.5mm}.specs-table{width:100%;border-collapse:collapse;font-size:10.2px;margin:1.5mm 0 2.5mm}.specs-table th,.specs-table td{border:1px solid #d9dce0;padding:4px 6px;text-align:left;vertical-align:top}.specs-table th{background:var(--orange);color:#fff;font-weight:800}.specs-table td:first-child{width:40%;font-weight:650}.video-button{display:inline-flex;align-items:center;gap:7px;margin:1mm 0 2.5mm;padding:7px 11px;border-radius:6px;background:#111;color:#fff;text-decoration:none;font-size:10.5px;font-weight:700}.video-button:before{content:"►";color:var(--orange);font-size:11px;line-height:1}.price-block{margin:1.5mm 0 2mm}.price-line{font-size:16px;font-weight:800;margin-bottom:1mm}.price-line.discount{color:var(--red)}.availability{font-size:12px;font-weight:800;margin-bottom:1.5mm}.availability.available{color:var(--green)}.availability.order{color:#b96a00}.price-comment{font-size:10.5px;color:#e0a15f;line-height:1.35;margin-bottom:2mm}
+.product-photo-grid{width:100%;display:flex;flex-wrap:wrap;align-items:flex-start;gap:4mm;margin-bottom:0}.product-photo-frame{flex:0 0 auto;border:1px solid #e0e2e5;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff}.product-photo-frame img{width:100%;height:100%;object-fit:contain;display:block;padding:2.5mm}.kp-description{font-size:12.2px;line-height:1.45;white-space:pre-wrap;margin-bottom:2.5mm}.kp-note{font-size:11.2px;color:#666;line-height:1.35;white-space:pre-wrap;margin-bottom:2.5mm}.specs-table{width:100%;border-collapse:collapse;font-size:10.2px;margin:1.5mm 0 2.5mm}.specs-table th,.specs-table td{border:1px solid #d9dce0;padding:4px 6px;text-align:left;vertical-align:top}.specs-table th{background:var(--orange);color:#fff;font-weight:800}.specs-table td:first-child{width:40%;font-weight:650}.video-button{display:inline-flex;align-items:center;gap:7px;margin:1mm 0 2.5mm;padding:7px 11px;border-radius:6px;background:#111;color:#fff;text-decoration:none;font-size:10.5px;font-weight:700}.video-button:before{content:"►";color:var(--orange);font-size:11px;line-height:1}.price-block{margin:1.5mm 0 2mm}.price-line{font-size:16px;font-weight:800;margin-bottom:1mm}.price-line.discount{color:var(--red)}.availability{font-size:12px;font-weight:800;margin-bottom:1.5mm}.availability.available{color:var(--green)}.availability.order{color:#b96a00}.price-comment{font-size:10.5px;color:#e0a15f;line-height:1.35;margin-bottom:2mm}.order-summary{margin:3mm 0 2.5mm;break-inside:avoid;page-break-inside:avoid}.order-summary-title{font-size:16px;font-weight:900;margin:0 0 2mm}.order-summary-table{width:100%;border-collapse:collapse;font-size:11px}.order-summary-table th,.order-summary-table td{border:1px solid #d9dce0;padding:5px 7px;text-align:left;vertical-align:top}.order-summary-table th{background:var(--orange);color:#fff;font-weight:800}.order-summary-table th:last-child,.order-summary-table td:last-child{text-align:right;white-space:nowrap}.order-summary-total td{background:#fff5e9;font-weight:900}.order-summary-total td:last-child{color:#bd5d00}
 .kp-bottom{
   flex:0 0 auto;
   width:100%;
@@ -309,6 +309,46 @@ async function getPhotoDataUrl(id){const b=await getPhoto(id);if(!b)return"";ret
 async function getProductPhotosData(p){const out=[];for(const id of p.photoIds||[]){try{const dataUrl=await getPhotoDataUrl(id);if(dataUrl)out.push({photoId:id,dataUrl})}catch(e){}}return out}
 function blockHtml(p,index,photos){const blocks=[];blocks.push(`<div class="kp-title">Коммерческое предложение</div>`);blocks.push(`<div class="kp-product-name">${escapeHtml(p.productName||`Оборудование №${index+1}`)}</div>`);if(photos.length){ensurePhotoPositions(p);let photoBottom=24;const photoHtml=photos.map((ph,i)=>{const s=getPhotoSize(p,ph.photoId);const pos=getPhotoPosition(p,ph.photoId);const crop=getPhotoCrop(p,ph.photoId);const applied=crop.applied===true;const x=applied?Math.min(89,crop.left+crop.right):0;const y=applied?Math.min(89,crop.top+crop.bottom):0;const frameW=s*(1-x/100);const frameH=s*(1-y/100);photoBottom=Math.max(photoBottom,pos.y+frameH+1.5);const imgLeft=applied?-(s*crop.left/100):0;const imgTop=applied?-(s*crop.top/100):0;return`<div class="product-photo-frame" style="position:absolute;left:${pos.x}mm;top:${pos.y}mm;width:${frameW}mm;height:${frameH}mm"><div class="photo-crop-preview" style="width:${s}mm;height:${s}mm;flex:none"><img src="${ph.dataUrl}" alt="Оборудование ${i+1}" style="width:${s}mm;height:${s}mm;left:${imgLeft}mm;top:${imgTop}mm"></div></div>`}).join("");blocks.push(`<div class="product-photo-grid" style="position:relative;height:${Math.max(24,photoBottom)}mm">${photoHtml}</div>`)}if(p.description.trim())blocks.push({type:"description",text:p.description});const rows=parseSpecs(p.specsText);if(rows.length)blocks.push({type:"specs",rows});if(p.note.trim())blocks.push(`<div class="kp-note">${escapeHtml(p.note)}</div>`);if(p.videoUrl.trim())blocks.push(`<a class="video-button" href="${escapeAttr(p.videoUrl)}" target="_blank" rel="noopener">Смотреть видео оборудования</a>`);const price=formatPrice(p.price,p.currency),disc=formatPrice(p.discountPrice,p.currency);if(price||disc)blocks.push(`<div class="price-block">${price?`<div class="price-line">Цена: ${price}</div>`:""}${disc?`<div class="price-line discount">Цена со скидкой: ${disc}</div>`:""}</div>`);blocks.push(`<div class="availability ${p.status==="order"?"order":"available"}">${p.status==="order"?"Под заказ":"В наличии"}</div>`);if(p.priceComment.trim())blocks.push(`<div class="price-comment">${escapeHtml(p.priceComment)}</div>`);return blocks}
 function specsTableHtml(rows){return`<table class="specs-table"><thead><tr><th colspan="2">Характеристики</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${escapeHtml(String(r[0]??""))}</td><td>${escapeHtml(String(r[1]??""))}</td></tr>`).join("")}</tbody></table>`}
+function orderSummaryData(products=state.products){
+  const rows=products.map((product,index)=>{
+    const discount=Number(String(product.discountPrice??"").replace(",","."));
+    const regular=Number(String(product.price??"").replace(",","."));
+    const amount=product.discountPrice!==""&&Number.isFinite(discount)&&discount>=0
+      ? discount
+      : Number.isFinite(regular)&&regular>=0
+        ? regular
+        : null;
+    return{
+      name:product.productName?.trim()||`Оборудование №${index+1}`,
+      currency:product.currency||"RUB",
+      amount,
+      price:amount===null?"Цена не указана":formatPrice(amount,product.currency||"RUB")
+    };
+  });
+  const totals=[];
+  for(const row of rows){
+    if(row.amount===null)continue;
+    const total=totals.find(item=>item.currency===row.currency);
+    if(total)total.amount+=row.amount;
+    else totals.push({currency:row.currency,amount:row.amount});
+  }
+  return{rows,totals};
+}
+function orderSummarySectionHtml(rows,totals,title){
+  const body=rows.map(row=>`<tr><td>${escapeHtml(row.name)}</td><td>${escapeHtml(row.price)}</td></tr>`).join("");
+  const totalRows=totals.map(total=>`<tr class="order-summary-total"><td>${totals.length===1?"Общая сумма":`Общая сумма (${escapeHtml(total.currency)})`}</td><td>${formatPrice(total.amount,total.currency)}</td></tr>`).join("");
+  return`<section class="order-summary" data-order-summary>${title?`<div class="order-summary-title">Итог по оборудованию</div>`:""}<table class="order-summary-table"><thead><tr><th>Название оборудования</th><th>Цена</th></tr></thead><tbody>${body}${totalRows}</tbody></table></section>`;
+}
+function orderSummaryBlocks(products=state.products){
+  if(products.length<2)return[];
+  const {rows,totals}=orderSummaryData(products);
+  const chunks=[];
+  for(let index=0;index<rows.length;index+=12){
+    const isLast=index+12>=rows.length;
+    chunks.push(orderSummarySectionHtml(rows.slice(index,index+12),isLast?totals:[],index===0));
+  }
+  return chunks;
+}
 async function measureHtmlHeight(html){const test=document.createElement("div");test.style.cssText="position:absolute;left:-100000px;top:0;visibility:hidden;width:180mm;box-sizing:border-box;";test.innerHTML=html;document.body.appendChild(test);const h=test.getBoundingClientRect().height;test.remove();return h}
 async function fitDescriptionChunk(text,available){const source=String(text||"");if(!source)return"";const words=source.split(/(\s+)/);let lo=1,hi=words.length,best="";while(lo<=hi){const mid=(lo+hi)>>1;const candidate=words.slice(0,mid).join("");const h=await measureHtmlHeight(`<div class="kp-description">${escapeHtml(candidate)}</div>`);if(h<=available+0.5||!best){if(h<=available+0.5){best=candidate;lo=mid+1}else{hi=mid-1}}else hi=mid-1}return best.trimEnd()}
 async function splitDescription(text,available){let rest=String(text||"").trim();const chunks=[];while(rest){const chunk=await fitDescriptionChunk(rest,available);if(!chunk)break;chunks.push(`<div class="kp-description">${escapeHtml(chunk)}</div>`);rest=rest.slice(chunk.length).trimStart()}return{chunks,rest}}
@@ -336,9 +376,9 @@ function makePage(content,index,continuation=false,withAdvantages=false){
 
   </div>`
 }
-async function paginateProduct(p,index){
+async function paginateProduct(p,index,tailBlocks=[]){
   const photos=await getProductPhotosData(p);
-  const blocks=blockHtml(p,index,photos);
+  const blocks=[...blockHtml(p,index,photos),...tailBlocks];
   // Проверяем не условную сумму высот, а фактическую собранную страницу.
   // В расчёт сразу входят фотографии, отступы, «Почему мы» и нижний подвал.
   async function fitsOnPage(content,firstPage){
@@ -514,7 +554,7 @@ async function paginateProduct(p,index){
 
   return pages.map((arr,i)=>makePage(arr,index,i>0,true));
 }
-async function buildAllPages(){const all=[];for(let i=0;i<state.products.length;i++){const pages=await paginateProduct(state.products[i],i);all.push(...pages)}return all}
+async function buildAllPages(){const all=[];for(let i=0;i<state.products.length;i++){const tail=i===state.products.length-1?orderSummaryBlocks():[];const pages=await paginateProduct(state.products[i],i,tail);all.push(...pages)}return all}
 function getA4SizePx(){const d=document.createElement("div");d.style.cssText="position:absolute;visibility:hidden;width:210mm;height:297mm";document.body.appendChild(d);const r={width:d.getBoundingClientRect().width,height:d.getBoundingClientRect().height};d.remove();return r}
 function fitPreviewPages(){const scroll=document.getElementById("previewScroll"),shells=document.querySelectorAll(".preview-page-shell");if(!scroll||!shells.length)return;const a4=getA4SizePx(),scale=Math.min(Math.max(100,scroll.clientWidth-40)/a4.width,Math.max(100,scroll.clientHeight-40)/a4.height);shells.forEach(s=>{s.style.width=a4.width*scale+"px";s.style.height=a4.height*scale+"px";const p=s.querySelector(".preview-page-scaled");if(p)p.style.transform=`scale(${scale})`})}
 let renderToken=0,renderTimer=0,renderRunning=false,renderQueued=false;
@@ -1276,6 +1316,39 @@ async function createDocx(){
       addDocxPageBlock(block,p);
     }
 
+    pageChildren.push(children);
+    children=[];
+  }
+
+  if(state.products.length>=2){
+    const summary=orderSummaryData();
+    const nameWidth=Math.round(CONTENT_W*.66),priceWidth=CONTENT_W-nameWidth;
+    const border={top:thinBorder,bottom:thinBorder,left:thinBorder,right:thinBorder};
+    const cell=(text,width,opts={})=>new docx.TableCell({
+      width:{size:width,type:docx.WidthType.DXA},
+      borders:border,
+      shading:opts.fill?{fill:opts.fill}:undefined,
+      margins:cellMargins,
+      children:[paragraph([run(text,{size:opts.size||16,bold:!!opts.bold,color:opts.color})],{alignment:opts.right?docx.AlignmentType.RIGHT:undefined,after:0,line:220})]
+    });
+    children.push(paragraph([run("Итог по оборудованию",{size:22,bold:true})],{before:120,after:90,line:270}));
+    const rows=[new docx.TableRow({cantSplit:true,children:[
+      cell("Название оборудования",nameWidth,{fill:ORANGE,bold:true,color:"FFFFFF"}),
+      cell("Цена",priceWidth,{fill:ORANGE,bold:true,color:"FFFFFF",right:true})
+    ]})];
+    summary.rows.forEach(row=>rows.push(new docx.TableRow({cantSplit:true,children:[
+      cell(row.name,nameWidth),cell(row.price,priceWidth,{right:true})
+    ]})));
+    summary.totals.forEach(total=>rows.push(new docx.TableRow({cantSplit:true,children:[
+      cell(summary.totals.length===1?"Общая сумма":`Общая сумма (${total.currency})`,nameWidth,{fill:"FFF5E9",bold:true}),
+      cell(formatPrice(total.amount,total.currency),priceWidth,{fill:"FFF5E9",bold:true,color:"BD5D00",right:true})
+    ]})));
+    children.push(new docx.Table({
+      width:{size:CONTENT_W,type:docx.WidthType.DXA},
+      columnWidths:[nameWidth,priceWidth],
+      rows,
+      borders:{top:thinBorder,bottom:thinBorder,left:thinBorder,right:thinBorder,insideHorizontal:thinBorder,insideVertical:thinBorder}
+    }));
     pageChildren.push(children);
     children=[];
   }
