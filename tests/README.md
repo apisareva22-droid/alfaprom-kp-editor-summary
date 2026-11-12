@@ -19,3 +19,4 @@ paragraph alignment.
 
 Set `TEST_ARTIFACTS_DIR` to save a screenshot and exported files. Optionally set
 `TEST_BASELINE_REF` to a Git revision to run the same checks against older HTML.
+Set `TEST_URL` to run the same checks against a published copy.

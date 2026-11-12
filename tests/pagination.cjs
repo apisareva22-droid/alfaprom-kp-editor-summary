@@ -23,6 +23,7 @@ const html = baseline ? cp.execFileSync('git', ['show', baseline+':index.html'],
 const artifacts = process.env.TEST_ARTIFACTS_DIR;
 if(artifacts)fs.mkdirSync(artifacts,{recursive:true});
 const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/html; charset=utf-8');res.end(html)});
+const testUrl = process.env.TEST_URL;
 (async()=>{
   await new Promise(r=>server.listen(0,'127.0.0.1',r));
   const browser = await chromium.launch({channel:process.env.PLAYWRIGHT_CHANNEL||'chrome',headless:true});
@@ -32,7 +33,7 @@ const server = http.createServer((req,res)=>{res.setHeader('Content-Type','text/
     page.on('pageerror',e=>errors.push(e.message));
     page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
     page.on('dialog',async d=>{errors.push(d.message());await d.dismiss()});
-    await page.goto(`http://127.0.0.1:${server.address().port}`,{waitUntil:'networkidle'});
+    await page.goto(testUrl||`http://127.0.0.1:${server.address().port}`,{waitUntil:'networkidle'});
     console.log('libraries',await page.evaluate(()=>({docx:!!window.docx,canvas:!!window.html2canvas,pdf:!!window.jspdf})));
     // Проверяем путь пользователя: выделение в редакторе → кнопка → итоговая страница.
     for(const [command,selector,style,expected] of [
