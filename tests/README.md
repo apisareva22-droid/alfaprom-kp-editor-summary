@@ -5,7 +5,7 @@ Playwright browser channel, set `PLAYWRIGHT_CHANNEL` (for example, `chromium`
 after `npx playwright install chromium`). Node.js 20+ and internet access to the
 application's existing export-library CDNs are required.
 
-The checks cover pagination with four photos, descriptions and lists, long
+The checks cover pagination with four photos, photos inserted inside descriptions, descriptions and lists, long
 specification tables, nested crops, multiple products, an oversized photo
 layout, editing, local persistence, and actual PDF/DOCX downloads. They assert
 that content stays above the footer and that descriptions, rows and photos are

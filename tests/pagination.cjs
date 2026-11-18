@@ -63,6 +63,17 @@ const testUrl = process.env.TEST_URL;
       assert.equal(await page.locator('#previewPages .kp-description [style]').first().evaluate(el=>getComputedStyle(el).textAlign),expected);
     }
     console.log('Toolbar formatting reaches preview');
+    const inlineEditor=page.locator('.rich-editor').first();
+    await inlineEditor.fill('Текст до фото и текст после фото');
+    await inlineEditor.press('End');
+    await page.locator('[data-inline-photo-add]').first().click();
+    await page.waitForFunction(()=>/figure data-inline-photo-id/.test(state.products[0].description));
+    assert.equal(await page.locator('.description-photo-empty').count(),1,'insert-photo button adds an editable photo block at the cursor');
+    await page.locator('[data-inline-photo-choose]').click();
+    await page.locator('[data-inline-photo-input]').setInputFiles({name:'inline.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLdyAAAAABJRU5ErkJggg==','base64')});
+    await page.waitForFunction(()=>Object.keys(state.products[0].inlinePhotos||{}).length===1&&document.querySelector('.description-photo-editor img'));
+    assert.equal(await page.locator('.description-photo-editor img').count(),1,'inline block accepts and renders its own image');
+    console.log('Inline photo block inserts from the description toolbar');
     for (const [name,config] of Object.entries({
       empty:{},
       short:{text:60},
@@ -70,6 +81,7 @@ const testUrl = process.env.TEST_URL;
       'four-photos-tight-boundary':{photos:4,text:250,y:99},
       'long-description-lists-specs':{text:500,rows:90,lists:true},
       'nested-crop-multiple-products':{photos:2,text:150,rows:12,crop:true,multiple:true},
+      'inline-photo-between-paragraphs':{text:80,inlinePhoto:true},
       'large-photo-layout':{photos:4,text:100,y:220},
       'formatted-description-across-pages':{photos:4,text:650,rich:true,rows:15},
       'long-formatted-word':{longWord:true}
@@ -92,6 +104,14 @@ const testUrl = process.env.TEST_URL;
             p.photoPositions[id]={x:(i%2)*96,y:Math.floor(i/2)*(config.y||86)};
             if(config.crop)p.photoCrops[id]={top:5,bottom:5,left:5,right:5,applied:true,base:{top:10,bottom:10,left:10,right:10}};
           }
+        }
+        if(config.inlinePhoto){
+          const canvas=document.createElement('canvas');canvas.width=canvas.height=100;
+          const ctx=canvas.getContext('2d');ctx.fillStyle='#1687d3';ctx.fillRect(0,0,100,100);
+          const blob=await new Promise(r=>canvas.toBlob(r));
+          const inlineId='inline_test_photo',photoId=await savePhoto(blob);
+          p.inlinePhotos={[inlineId]:photoId};p.photoSizes[inlineId]=58;
+          p.description='<p>Текст до фотографии</p><figure data-inline-photo-id="'+inlineId+'"></figure><p>Текст после фотографии</p>';
         }
         state.products=[p];if(config.multiple)state.products.push({...createProduct(),productName:'Второе оборудование',description:'Описание второго оборудования',price:'500'});
         state.managerName='Тестовый менеджер';state.managerPhone='+7 000 000-00-00';
@@ -117,7 +137,8 @@ const testUrl = process.env.TEST_URL;
         const summary=host.querySelector('[data-order-summary]');
         const lastProduct=[...host.querySelectorAll('.kp-product-name')].at(-1);
         const summaryAfterProducts=!!summary&&!!lastProduct&&!!(lastProduct.compareDocumentPosition(summary)&Node.DOCUMENT_POSITION_FOLLOWING);
-        return {pages:pages.length,issues,textPreserved:description===expected,formattingPreserved,rows:host.querySelectorAll('.specs-table tbody tr').length,photos:frames.length,photosVisible:frames.every(frame=>{const r=frame.getBoundingClientRect();return r.width>1&&r.height>1}),summaryText:summary?.textContent.replace(/\s+/g,' ').trim()||'',summaryAfterProducts};
+        const inlinePhoto=host.querySelector('.kp-inline-photo img');
+        return {pages:pages.length,issues,textPreserved:description===expected,formattingPreserved,rows:host.querySelectorAll('.specs-table tbody tr').length,photos:frames.length,photosVisible:frames.every(frame=>{const r=frame.getBoundingClientRect();return r.width>1&&r.height>1}),inlinePhotoVisible:!config.inlinePhoto||!!inlinePhoto&&inlinePhoto.getBoundingClientRect().width>1&&inlinePhoto.getBoundingClientRect().height>1,summaryText:summary?.textContent.replace(/\s+/g,' ').trim()||'',summaryAfterProducts};
       },config);
       console.log(name,JSON.stringify(result));
       if(artifacts&&name==='four-photos-tight-boundary')await page.locator('#qa-pages > .kp-page').first().screenshot({path:path.join(artifacts,baseline?'before.png':'after.png')});
@@ -129,6 +150,7 @@ const testUrl = process.env.TEST_URL;
       assert.equal(result.rows,config.rows||0,name+' preserves rows');
       assert.equal(result.photos,config.photos||0,name+' preserves photos');
       assert.equal(result.photosVisible,true,name+' keeps photos visible');
+      assert.equal(result.inlinePhotoVisible,true,name+' keeps inline description photo visible');
       assert.equal(result.formattingPreserved,true,name+' keeps formatting and list numbering');
       if(config.multiple){
         assert.match(result.summaryText,/Итог по оборудованию.*Автоклав 300 литров.*90\s?000.*Второе оборудование.*500.*Общая сумма.*90\s?500/s,name+' renders equipment total');
