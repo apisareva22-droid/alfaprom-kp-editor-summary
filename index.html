@@ -58,7 +58,7 @@
 #pdfMeasure{position:absolute;left:-100000px;top:0;width:210mm;visibility:hidden;pointer-events:none}.pdf-render-root{width:210mm;background:#fff}.pdf-render-root .kp-page{box-shadow:none}.pdf-render-root .preview-page-shell{display:block!important}
 @media(max-width:900px){.layout{grid-template-columns:1fr}.editor{border-right:0}.preview-side{min-height:800px}.two-cols{grid-template-columns:1fr}.topbar{height:auto;min-height:62px;padding:10px 14px}.topbar-title{font-size:15px}}
 .footer-rating>.rating-star,.footer-rating>.rating-copy{transform:translateY(-1mm)}
- .description-photo-preview{display:flex;justify-content:center}.description-photo-frame{position:relative;overflow:hidden;background:#fff;max-width:100%}.description-photo-editor img{max-width:none;max-height:none;margin:0}.description-photo-crop{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;padding:8px;background:#fff;border:1px solid #f0d9bd;border-radius:6px;font-size:11px;color:#555}.description-photo-crop label{display:flex;align-items:center;gap:4px}.description-photo-crop input{width:100%;padding:0}
+ .description-photo-preview{display:flex;justify-content:center}.description-photo-frame{position:relative;overflow:hidden;background:#fff;max-width:100%}.description-photo-editor img{max-width:none;max-height:none;margin:0}.description-photo-crop{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;padding:8px;background:#fff;border:1px solid #f0d9bd;border-radius:6px;font-size:11px;color:#555}.description-photo-crop label{display:flex;align-items:center;gap:4px}.description-photo-crop input{width:100%;padding:0}.description-photo-layout-editor{max-width:none}.description-photo-layout-editor .photo-editor{margin-bottom:0}
 </style>
 </head>
 <body>
@@ -1311,15 +1311,16 @@ async function createDocx(){
     for(const block of docxBlocks){
       if(typeof block==="string"&&block.includes("product-photo-grid"))continue;
       if(block&&typeof block==="object"&&block.type==="inlinePhoto"){
-        const photoId=ensureInlinePhotos(p)[block.photoId];
-        const blob=photoId?await getPhoto(photoId).catch(()=>null):null;
-        const bytes=blob?await imageBlobToPngBytes(blob):null;
-        if(bytes){
-          const size=getPhotoSize(p,block.photoId),crop=effectivePhotoCrop(p,block.photoId);
+        const group=inlinePhotoGroup(p,block.photoId),runs=[];
+        for(const photoId of group.photoIds){
+          const blob=await getPhoto(photoId).catch(()=>null),bytes=blob?await imageBlobToPngBytes(blob):null;
+          if(!bytes)continue;
+          const size=getPhotoSize(p,photoId),crop=effectivePhotoCrop(p,photoId);
           const width=Math.min(310,Math.max(120,Math.round(size*(100-crop.left-crop.right)/100*MM_TO_PX)));
           const height=Math.min(310,Math.max(120,Math.round(size*(100-crop.top-crop.bottom)/100*MM_TO_PX)));
-          children.push(paragraph([new docx.ImageRun({data:bytes,type:"png",transformation:{width,height}})],{alignment:docx.AlignmentType.CENTER,after:120}));
+          runs.push(new docx.ImageRun({data:bytes,type:"png",transformation:{width,height}}));
         }
+        if(runs.length)children.push(paragraph(runs,{alignment:docx.AlignmentType.CENTER,after:120}));
         continue;
       }
       if(block&&typeof block==="object"&&block.type==="description"){
@@ -1689,6 +1690,104 @@ paginateProduct=async function(p,index,tailBlocks=[]){
     blockHtml=function(product,productIndex,productPhotos){return product===p&&productIndex===index?rendered:originalBlockHtml(product,productIndex,productPhotos)};
     return await paginateProductWithDescriptionPhotos(p,index,tailBlocks);
   }finally{blockHtml=originalBlockHtml}
+};
+
+// Фотомакет в описании — самостоятельная группа, устроенная так же, как
+// основной фотомакет товара. Старые одиночные фото автоматически становятся
+// группой из одного снимка, поэтому ранее созданные КП не теряют данные.
+function ensureInlinePhotoGroups(p){
+  if(!p.inlinePhotoGroups||typeof p.inlinePhotoGroups!=="object"||Array.isArray(p.inlinePhotoGroups))p.inlinePhotoGroups={};
+  const legacy=ensureInlinePhotos(p);
+  for(const [groupId,photoId] of Object.entries(legacy)){
+    if(photoId&&!p.inlinePhotoGroups[groupId])p.inlinePhotoGroups[groupId]={photoIds:[photoId]};
+  }
+  return p.inlinePhotoGroups;
+}
+function inlinePhotoGroup(p,groupId){
+  const groups=ensureInlinePhotoGroups(p);
+  if(!groups[groupId]||typeof groups[groupId]!=="object")groups[groupId]={photoIds:[]};
+  if(!Array.isArray(groups[groupId].photoIds))groups[groupId].photoIds=[];
+  return groups[groupId];
+}
+insertInlinePhotoMarker=function(p,editor){
+  const id=inlinePhotoMarkerId();inlinePhotoGroup(p,id);
+  const marker=document.createElement("figure");marker.setAttribute("data-inline-photo-id",id);marker.innerHTML="<br>";
+  const selection=window.getSelection();let range=selection&&selection.rangeCount?selection.getRangeAt(0):null;
+  if(!range||!editor.contains(range.commonAncestorContainer)){range=document.createRange();range.selectNodeContents(editor);range.collapse(false)}
+  range.deleteContents();range.insertNode(marker);
+  const after=document.createElement("p");after.innerHTML="<br>";marker.after(after);
+  range.setStart(after,0);range.collapse(true);selection.removeAllRanges();selection.addRange(range);return id;
+};
+async function addInlineGroupPhotos(p,groupId,files){
+  const group=inlinePhotoGroup(p,groupId),valid=Array.from(files||[]).filter(file=>file?.type?.startsWith("image/"));
+  if(!valid.length)return;
+  const saved=[];
+  try{
+    for(const file of valid){
+      const id=await savePhoto(await preparePhoto(file));saved.push(id);p.photoSizes[id]=DEFAULT_PHOTO_SIZE_MM;
+      const slot=group.photoIds.length+saved.length-1;setPhotoPosition(p,id,(slot%2)*95,Math.floor(slot/2)*65);
+    }
+    group.photoIds.push(...saved);saveState();renderProductsEditor();renderPreview();
+  }catch(error){for(const id of saved)await deletePhoto(id).catch(()=>{});throw error}
+}
+async function renderInlinePhotoGrid(p,groupId,figure,field){
+  const group=inlinePhotoGroup(p,groupId),grid=figure.querySelector(`[data-inline-photo-grid="${groupId}"]`);
+  if(!grid)return;
+  ensurePhotoSizes(p);ensurePhotoPositions(p);ensurePhotoCrops(p);grid.innerHTML="";grid.classList.remove("photo-grid-dragging");
+  const choose=()=>{field.dataset.inlinePhotoTarget=groupId;field.querySelector(`[data-inline-photo-input="${p.id}"]`).click()};
+  if(!group.photoIds.length){
+    grid.style.height="auto";const item=document.createElement("div");item.className="photo-editor-item";item.style.position="static";
+    item.innerHTML=`<div class="photo-drop"><div class="photo-placeholder">Нажмите сюда или перетащите фотографию<br><small>Можно добавить несколько фотографий</small></div></div>`;
+    grid.appendChild(item);const drop=item.querySelector(".photo-drop");drop.onclick=choose;drop.ondragover=e=>{e.preventDefault();drop.classList.add("dragover")};drop.ondragleave=()=>drop.classList.remove("dragover");drop.ondrop=async e=>{e.preventDefault();drop.classList.remove("dragover");try{await addInlineGroupPhotos(p,groupId,e.dataTransfer.files)}catch(error){alert("Не удалось сохранить фотографию.")}};return;
+  }
+  for(let i=0;i<group.photoIds.length;i++){
+    const id=group.photoIds[i],size=getPhotoSize(p,id),pos=getPhotoPosition(p,id),px=Math.round(size*MM_TO_PX),item=document.createElement("div");
+    item.className="photo-editor-item";item.dataset.photoId=id;item.style.width=px+"px";item.style.left=pos.x+"mm";item.style.top=pos.y+"mm";
+    item.innerHTML=`<div class="photo-drop" style="width:${px}px;height:${px}px"><div class="photo-placeholder">Загрузка...</div></div><div class="photo-size-label">Размер в КП: ${size} × ${size} мм</div><button type="button" class="photo-item-remove">Удалить фото</button>`;
+    grid.appendChild(item);const drop=item.querySelector(".photo-drop"),remove=item.querySelector(".photo-item-remove");
+    try{
+      const blob=await getPhoto(id);if(!blob){group.photoIds=group.photoIds.filter(x=>x!==id);item.remove();continue}
+      const url=URL.createObjectURL(blob);drop.classList.add("has-image");drop.style.touchAction="none";
+      drop.innerHTML=`<div class="photo-crop-preview"><div class="photo-crop-window"><img src="${url}" alt="Фото в описании" draggable="false"></div><div class="photo-crop-border"></div><div class="photo-crop-handle photo-crop-handle-top" data-crop-handle="top"></div><div class="photo-crop-handle photo-crop-handle-bottom" data-crop-handle="bottom"></div><div class="photo-crop-handle photo-crop-handle-left" data-crop-handle="left"></div><div class="photo-crop-handle photo-crop-handle-right" data-crop-handle="right"></div></div><div class="photo-resize-handle" title="Потяните, чтобы изменить размер"></div>`;
+      const preview=drop.querySelector(".photo-crop-preview"),img=preview.querySelector("img"),cropButton=document.createElement("button"),undoButton=document.createElement("button");
+      cropButton.type="button";cropButton.className="photo-crop-apply";cropButton.textContent="✓ Обрезать";cropButton.style.display="none";undoButton.type="button";undoButton.className="photo-crop-undo";undoButton.textContent="↶ Отменить обрезку";undoButton.style.display="none";drop.append(cropButton,undoButton);
+      img.onload=()=>{URL.revokeObjectURL(url);syncPhotoEditorFrame(p,item,id);updatePhotoCropHandles(p,id,preview);if(getPhotoCrop(p,id).applied)undoButton.style.display="block"};
+      bindPhotoCropControls(p,item);bindPhotoResize(p,item);bindPhotoDrag(p,item);
+    }catch(error){console.error(error)}
+    remove.onclick=async e=>{e.preventDefault();e.stopPropagation();await deletePhoto(id).catch(()=>{});group.photoIds=group.photoIds.filter(x=>x!==id);delete p.photoSizes[id];delete p.photoPositions[id];delete p.photoCrops[id];saveState();renderProductsEditor();renderPreview()};
+  }
+  refreshPhotoEditorGrid(p,grid);
+}
+renderInlinePhotoEditor=function(p,editor,field){
+  ensureInlinePhotoGroups(p);editor.querySelectorAll("figure[data-inline-photo-id]").forEach(figure=>{
+    const groupId=figure.getAttribute("data-inline-photo-id");if(!groupId)return;inlinePhotoGroup(p,groupId);
+    figure.className="description-photo-editor description-photo-layout-editor";figure.contentEditable="false";
+    figure.innerHTML=`<div class="field" style="margin-bottom:6px"><label>Фотографии в этом месте описания</label></div><div class="photo-editor"><div class="photo-editor-grid" data-inline-photo-grid="${groupId}"></div><div class="photo-actions"><button class="small-btn" type="button" data-inline-photo-choose="${groupId}">＋ Добавить фото</button><button class="small-btn inline-photo-remove" type="button" data-inline-photo-remove="${groupId}">Удалить блок</button></div></div>`;
+    figure.querySelector("[data-inline-photo-choose]").onclick=()=>{field.dataset.inlinePhotoTarget=groupId;field.querySelector(`[data-inline-photo-input="${p.id}"]`).click()};
+    figure.querySelector("[data-inline-photo-remove]").onclick=async()=>{const group=inlinePhotoGroup(p,groupId);for(const id of group.photoIds)await deletePhoto(id).catch(()=>{});delete p.inlinePhotoGroups[groupId];delete p.inlinePhotos?.[groupId];figure.remove();normalizeInlinePhotoMarkers(editor);p.description=descriptionHtml(editor.innerHTML);saveState();renderPreview()};
+    renderInlinePhotoGrid(p,groupId,figure,field);
+  });
+};
+setupInlinePhotoEditor=function(p,editor,field){
+  renderInlinePhotoEditor(p,editor,field);
+  const input=field.querySelector(`[data-inline-photo-input="${p.id}"]`);input.multiple=true;
+  input.onchange=async e=>{const groupId=field.dataset.inlinePhotoTarget,files=Array.from(e.target.files||[]);input.value="";delete field.dataset.inlinePhotoTarget;if(!groupId||!files.length)return;try{await addInlineGroupPhotos(p,groupId,files)}catch(error){console.error(error);alert("Не удалось сохранить фотографию. Попробуйте выбрать её ещё раз.")}};
+};
+descriptionBlocksWithInlinePhotos=function(p,value){
+  const host=document.createElement("div");host.innerHTML=descriptionHtml(value);normalizeInlinePhotoMarkers(host);const blocks=[],part=document.createElement("div");
+  const flush=()=>{if(part.innerHTML.trim())blocks.push({type:"description",text:part.innerHTML});part.innerHTML=""};
+  [...host.childNodes].forEach(node=>{if(node.nodeType===Node.ELEMENT_NODE&&node.tagName==="FIGURE"&&node.dataset.inlinePhotoId){flush();inlinePhotoGroup(p,node.dataset.inlinePhotoId);blocks.push({type:"inlinePhoto",photoId:node.dataset.inlinePhotoId})}else part.appendChild(node.cloneNode(true))});flush();return blocks;
+};
+inlinePhotoPreviewHtml=function(p,groupId){
+  const group=inlinePhotoGroup(p,groupId),data=p._inlinePhotoData?.[groupId]||{};if(!group.photoIds.length)return"";let bottom=24;
+  const photos=group.photoIds.map((id,index)=>{const url=data[id];if(!url)return"";const size=getPhotoSize(p,id),pos=getPhotoPosition(p,id),crop=effectivePhotoCrop(p,id),width=size*(100-crop.left-crop.right)/100,height=size*(100-crop.top-crop.bottom)/100;bottom=Math.max(bottom,pos.y+height+1.5);return`<div class="product-photo-frame" style="position:absolute;left:${pos.x}mm;top:${pos.y}mm;width:${width}mm;height:${height}mm"><div class="photo-crop-preview" style="width:100%;height:100%;flex:none;position:relative;overflow:hidden"><img src="${url}" alt="Фото в описании ${index+1}" style="position:absolute;max-width:none;padding:0;width:${size}mm;height:${size}mm;left:${-size*crop.left/100}mm;top:${-size*crop.top/100}mm"></div></div>`}).join("");
+  return`<div class="kp-inline-photo"><div class="product-photo-grid" style="position:relative;height:${Math.max(24,bottom)}mm">${photos}</div></div>`;
+};
+const getProductPhotosWithGroupedInlineData=getProductPhotosData;
+getProductPhotosData=async function(p){
+  const photos=await getProductPhotosWithGroupedInlineData(p);p._inlinePhotoData={};
+  for(const [groupId,group] of Object.entries(ensureInlinePhotoGroups(p))){p._inlinePhotoData[groupId]={};for(const id of group.photoIds||[]){try{const data=await getPhotoDataUrl(id);if(data)p._inlinePhotoData[groupId][id]=data}catch(error){}}}
+  return photos;
 };
 </script>
 </body>
