@@ -1787,5 +1787,104 @@ getProductPhotosData=async function(p){
   return photos;
 };
 </script>
+<script>
+// Set to the deployed function's invocation URL when the cloud is connected.
+const supplierEndpoint = "https://functions.yandexcloud.net/d4egjf1bjeenvi1tshvc";
+if (supplierEndpoint) {
+  const renderWithoutSupplier = renderProductsEditor;
+  renderProductsEditor = function () {
+    renderWithoutSupplier();
+    document.querySelectorAll(".product-editor-card").forEach(attachSupplierImport);
+  };
+  renderProductsEditor();
+}
+
+function attachSupplierImport(card) {
+  const product = state.products.find(item => item.id === card.dataset.productId);
+  const head = card.querySelector(".product-editor-head");
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "small-btn";
+  toggle.textContent = "Добавить оборудование по ссылке";
+  head.append(toggle);
+  const panel = document.createElement("div");
+  panel.hidden = true;
+  panel.className = "field";
+  panel.innerHTML = '<form style="display:flex;align-items:center;gap:8px"><input type="url" required aria-label="Ссылка на оборудование" placeholder="Ссылка на товар hmru.ru" style="border-radius:25px"><span aria-hidden="true">→</span><button class="btn btn-primary">Добавить</button></form><small role="status"></small>';
+  head.after(panel);
+  toggle.setAttribute("aria-expanded", "false");
+  toggle.onclick = () => {
+    panel.hidden = !panel.hidden;
+    toggle.setAttribute("aria-expanded", String(!panel.hidden));
+    if (!panel.hidden) panel.querySelector("input").focus();
+  };
+  const form = panel.querySelector("form");
+  const status = panel.querySelector("[role=status]");
+  async function request(url, type) {
+    const endpoint = new URL(supplierEndpoint);
+    endpoint.searchParams.set("url", url);
+    endpoint.searchParams.set("type", type);
+    const response = await fetch(endpoint, {signal: AbortSignal.timeout(20000)});
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Не удалось получить данные поставщика.");
+    return response;
+  }
+  form.onsubmit = async event => {
+    event.preventDefault();
+    const submit = form.querySelector("button");
+    if (submit.disabled) return;
+    submit.disabled = true;
+    const saved = [];
+    let skipped = 0;
+    try {
+      status.textContent = "Загружаем карточку…";
+      const data = await (await request(form.querySelector("input").value.trim(), "product")).json();
+      for (const url of data.images || []) {
+        if (!new URL(url).pathname.includes("/iblock/")) continue;
+        if (!card.isConnected) break;
+        try {
+          const blob = await (await request(url, "image")).blob();
+          saved.push(await savePhoto(await preparePhoto(blob)));
+        } catch { skipped++; }
+      }
+      if (!card.isConnected) throw new Error("Карточка изменилась во время импорта.");
+      const changed = {};
+      for (const field of ["productName", "description", "specsText", "price"]) {
+        if (data[field] && !product[field] && (field !== "price" || product.currency === "RUB")) {
+          changed[field] = field === "description" ? "<p>" + escapeHtml(data[field]).replace(/\n/g, "<br>") + "</p>" : data[field];
+        }
+      }
+      const first = product.photoIds.length;
+      Object.assign(product, changed);
+      saved.forEach((id, i) => {
+        product.photoIds.push(id);
+        setPhotoSize(product, id, DEFAULT_PHOTO_SIZE_MM);
+        setPhotoPosition(product, id, ((first+i)%2)*90, Math.floor((first+i)/2)*65);
+      });
+      try {
+        saveState();
+      } catch (error) {
+        product.photoIds.splice(first);
+        for (const id of saved) {
+          delete product.photoSizes[id];
+          delete product.photoPositions[id];
+        }
+        for (const field of Object.keys(changed)) product[field] = "";
+        throw error;
+      }
+      saved.length = 0;
+      renderProductsEditor();
+      renderPreview();
+      const updated = [...document.querySelectorAll(".product-editor-card")].find(c => c.dataset.productId === product.id);
+      const note = document.createElement("small");
+      note.setAttribute("role", "status");
+      note.textContent = "Импорт завершён. Проверьте поля и цену." + (skipped ? " Пропущено фото: " + skipped : "");
+      updated?.querySelector(".product-editor-head").after(note);
+    } catch (error) {
+      await Promise.all(saved.map(id => deletePhoto(id).catch(() => {})));
+      status.textContent = error.message;
+    } finally { submit.disabled = false; }
+  };
+}
+</script>
 </body>
 </html>

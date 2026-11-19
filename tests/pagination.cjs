@@ -76,6 +76,7 @@ const testUrl = process.env.TEST_URL;
     await page.locator('[data-inline-photo-choose]').click();
     await page.locator('[data-inline-photo-input]').setInputFiles({name:'inline-2.png',mimeType:'image/png',buffer:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLdyAAAAABJRU5ErkJggg==','base64')});
     await page.waitForFunction(()=>Object.values(state.products[0].inlinePhotoGroups||{}).some(group=>group.photoIds?.length===2));
+    await page.locator('.description-photo-layout-editor .photo-editor-item').nth(1).waitFor();
     assert.equal(await page.locator('.description-photo-layout-editor .photo-editor-item').count(),2,'one inline photo block accepts multiple movable photos');
     console.log('Inline photo block inserts from the description toolbar');
     for (const [name,config] of Object.entries({
