@@ -12,6 +12,9 @@ const supplier = 'https://hmru.ru/catalog/markirovochnoe_i_etiketirovochnoe_obor
     page.on('pageerror', error => console.error(error.message));
     page.on('requestfailed', request => console.error(new URL(request.url()).hostname, request.failure()?.errorText));
     if (!process.env.TEST_URL) {
+      // Reproduce an interrupted gallery request and verify automatic recovery.
+      await page.route(url => url.hostname === 'functions.yandexcloud.net' && url.searchParams.get('type') === 'image',
+        route => route.abort('connectionaborted'), {times:1});
       await page.route(site, route => route.fulfill({
         path:path.join(__dirname,'..','index.html'), contentType:'text/html; charset=utf-8'
       }));

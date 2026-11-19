@@ -1824,9 +1824,19 @@ function attachSupplierImport(card) {
     const endpoint = new URL(supplierEndpoint);
     endpoint.searchParams.set("url", url);
     endpoint.searchParams.set("type", type);
-    const response = await fetch(endpoint, {signal: AbortSignal.timeout(20000)});
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || "Не удалось получить данные поставщика.");
-    return response;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const response = await fetch(endpoint, {signal: AbortSignal.timeout(20000)});
+        if (response.ok) return await (type === "image" ? response.blob() : response.json());
+        if (attempt || (response.status < 500 && response.status !== 429)) {
+          throw new Error((await response.json().catch(() => ({}))).error || "Не удалось получить данные поставщика.");
+        }
+      } catch (error) {
+        if (attempt || !(error instanceof TypeError || error.name === "TimeoutError")) throw error;
+      }
+      await new Promise(resolve => setTimeout(resolve, 700));
+      if (!card.isConnected) throw new Error("Карточка изменилась во время импорта.");
+    }
   }
   form.onsubmit = async event => {
     event.preventDefault();
@@ -1837,12 +1847,13 @@ function attachSupplierImport(card) {
     let skipped = 0;
     try {
       status.textContent = "Загружаем карточку…";
-      const data = await (await request(form.querySelector("input").value.trim(), "product")).json();
-      for (const url of data.images || []) {
-        if (!new URL(url).pathname.includes("/iblock/")) continue;
+      const data = await request(form.querySelector("input").value.trim(), "product");
+      const photos = (data.images || []).filter(url => new URL(url).pathname.includes("/iblock/"));
+      for (const [index, url] of photos.entries()) {
         if (!card.isConnected) break;
+        status.textContent = `Загружаем фото ${index + 1} из ${photos.length}…`;
         try {
-          const blob = await (await request(url, "image")).blob();
+          const blob = await request(url, "image");
           saved.push(await savePhoto(await preparePhoto(blob)));
         } catch { skipped++; }
       }
