@@ -214,17 +214,44 @@ def items(value):
     return value if isinstance(value, list) else [value] if value is not None else []
 
 
+def specs_from_description(description):
+    """Recognize explicit measurements when a supplier publishes specs as prose."""
+    number = r"\d+(?:[.,]\d+)?"
+    measure = rf"(?:от\s+|до\s+)?{number}(?:\s*(?:[–—-]|до)\s*{number})?"
+    dimensions = rf"{number}(?:\s*[хx×]\s*{number}){{1,2}}"
+    patterns = [
+        (r"размер(?:ы)? (?:картонной коробки|упаковки|нагревательного элемента)",
+         dimensions + r"\s*(?:мм|см|м)"),
+        (r"(?:потребляемая |номинальная )?мощность(?: аппарата)?",
+         measure + r"\s*(?:кВт|Вт|киловатт(?:а|ов)?|ватт(?:а|ов)?)"),
+        (r"электропитание", r"(?:однофазное|тр[её]хфазное)(?: от сети)?(?: напряжением)?\s*" + measure + r"\s*В"),
+        (r"напряжение(?: питания)?", measure + r"\s*(?:В|вольт(?:а|ов)?)"),
+        (r"(?:вес|масса)(?: аппарата| нетто| брутто)?", measure + r"\s*(?:кг|г|т)"),
+        (r"гарантийный срок", measure + r"\s*(?:лет|года?|месяц(?:а|ев)?)"),
+    ]
+    found = []
+    for label, value in patterns:
+        verb = r"(?:\s+на [\w -]{1,50}?)?\s+составляет\s+" if label == "гарантийный срок" else r"\s+составляет\s+"
+        pattern = rf"(?<!\w)({label})(?:{verb}|\s*[:–—-]?\s*)({value})(?!\w)(?=\s*(?:$|[.,;\n]))"
+        for match in re.finditer(pattern, description, re.I):
+            key, raw = match.groups()
+            found.append((match.start(), key[0].upper() + key[1:] + ": " + raw))
+    return [row for _, row in sorted(found)]
+
+
 def parse_generic(source, url):
     page = GenericPage()
     page.feed(source)
     page.close()
     meta, props, products, graph = {}, {}, [], {}
     headings, descriptions, images, rows, visible_prices = [], [], [], [], []
+    visible_descriptions = []
     gallery = False
 
-    def walk(node, in_gallery=False):
+    def walk(node, in_gallery=False, in_image=False):
         nonlocal gallery
         a, tag = node.attrs, node.tag
+        in_image = in_image or str(a.get("itemtype", "")).rstrip("/").endswith("/ImageObject")
         label = (str(a.get("id", "")) + " " + str(a.get("class", ""))).lower()
         if tag in {"nav", "footer", "aside", "style", "noscript", "svg", "template"} or re.search(
                 r"recommend|related|upsell|cross-sell|also-bought|viewed-products", label):
@@ -260,9 +287,13 @@ def parse_generic(source, url):
                     visible_prices.append((match[1], match[2].upper()))
         for prop in (a.get("itemprop") or "").split():
             if prop in {"image", "price", "priceCurrency", "description"}:
+                if prop == "description" and in_image:
+                    continue
                 val = a.get("content") or a.get("href") or a.get("data-src") or a.get("src") or clean(node.text())
                 if val:
                     props.setdefault(prop, []).append(val)
+                    if prop == "description" and tag not in {"meta", "link"}:
+                        visible_descriptions.append(val)
         if tag in {"div", "section", "article", "p"} and re.search(
                 r"(?:product|item|detail|tab)[\w-]*(?:descr|opisanie)|(?:^|\s)(?:description|opisanie)(?:\s|$)", label):
             descriptions.append(clean(node.text()))
@@ -288,7 +319,7 @@ def parse_generic(source, url):
                 images.append(raw)
         for c in node.children:
             if isinstance(c, Element):
-                walk(c, in_gallery)
+                walk(c, in_gallery, in_image)
 
     walk(page.stack[0])
     h1 = next(filter(None, headings), "")
@@ -319,9 +350,11 @@ def parse_generic(source, url):
     if not amount and len(set(visible_prices)) == 1:
         amount, currency = visible_prices[0]
         currency = {"₽": "RUB", "РУБ": "RUB", "РУБ.": "RUB", "€": "EUR"}.get(currency, currency)
-    description = plain_description(product.get("description") or first("description") or
-                                    next(filter(None, descriptions), "") or meta.get("og:description") or meta.get("description"))
     name = clean(product.get("name") or h1 or meta.get("og:title"))
+    candidates = [*visible_descriptions, product.get("description"), *descriptions,
+                  *props.get("description", []), meta.get("og:description"), meta.get("description")]
+    description = next((value for value in map(plain_description, candidates)
+                        if value and value.casefold() != name.casefold()), "")
     if not name or not (product or amount or meta.get("og:type", "").startswith("product") or
                         (h1 and (rows or gallery) and (description or images))):
         raise ValueError("Не удалось распознать карточку. Проверьте, что ссылка ведёт на открытый товар.")
@@ -345,7 +378,7 @@ def parse_generic(source, url):
                 photos.append(absolute)
     amount = re.sub(r"\s", "", str(amount)).replace(",", ".")
     return dict(productName=name, description=description[:100000],
-                specsText="\n".join(dict.fromkeys(specs or rows))[:60000],
+                specsText="\n".join(dict.fromkeys(specs or rows or specs_from_description(description)))[:60000],
                 price=amount if re.fullmatch(r"\d+(?:\.\d+)?", amount) else "",
                 currency=currency.strip().upper(), images=photos[:24])
 

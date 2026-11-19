@@ -37,6 +37,24 @@ class SupplierTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             supplier.parse_generic("<h1>Каталог</h1><p>Все товары</p>", URL)
 
+    def test_full_description_and_embedded_specs(self):
+        html = '''<h1>Запайщик</h1><meta itemprop="description" content="Запайщик">
+          <meta itemprop="price" content="100"><div itemtype="https://schema.org/ImageObject">
+          <meta itemprop="description" content="Фото аппарата"></div>
+          <div itemprop="description">Ручной аппарат.<br>Размер картонной коробки 670х330х300 мм.<br>
+          Потребляемая мощность аппарата: 1000 Ватт, электропитание: однофазное от сети напряжением 220 В.<br>
+          Вес 15 кг. Тефлоновое покрытие, размер нагревательного элемента 273 х 200 мм<br>
+          Гарантийный срок на предлагаемый аппарат составляет 3 года, включая обслуживание.</div>'''
+        data = supplier.parse_generic(html, URL)
+        self.assertTrue(data["description"].startswith("Ручной аппарат.\n"))
+        self.assertIn("включая обслуживание.", data["description"])
+        self.assertEqual(data["specsText"].splitlines(), [
+            "Размер картонной коробки: 670х330х300 мм", "Потребляемая мощность аппарата: 1000 Ватт",
+            "Электропитание: однофазное от сети напряжением 220 В", "Вес: 15 кг",
+            "Размер нагревательного элемента: 273 х 200 мм", "Гарантийный срок: 3 года"])
+        table = '<table><tr><td>Масса нетто</td><td>14 кг</td></tr></table>'
+        self.assertEqual(supplier.parse_generic(html + table, URL)["specsText"], "Масса нетто: 14 кг")
+
     def test_private_destination_rejected_before_connect(self):
         with patch("socket.getaddrinfo", return_value=[(None, None, None, None, ("127.0.0.1", 443))]), \
                 patch("socket.create_connection") as connect, self.assertRaises(ValueError):
