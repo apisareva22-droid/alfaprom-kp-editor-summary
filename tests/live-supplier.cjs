@@ -3,7 +3,10 @@ const { chromium } = require('playwright');
 const assert = require('node:assert/strict');
 const path = require('node:path');
 const site = 'https://apisareva22-droid.github.io/alfaprom-kp-editor-summary/';
-const supplier = 'https://hmru.ru/catalog/markirovochnoe_i_etiketirovochnoe_oborudovanie/etiketirovshchiki/avtomaticheskiy_etiketirovshchik_dlya_paketov_hlmt_280p_vakuumnyy_zakhvat_termotransfernaya_pechat/';
+const otherSupplier = process.env.SUPPLIER === 'hurakan';
+const supplier = otherSupplier
+  ? 'https://hurakan.store/products/vakuumnyy-upakovshchik-hurakan-hkn-vac260e/'
+  : 'https://hmru.ru/catalog/markirovochnoe_i_etiketirovochnoe_oborudovanie/etiketirovshchiki/avtomaticheskiy_etiketirovshchik_dlya_paketov_hlmt_280p_vakuumnyy_zakhvat_termotransfernaya_pechat/';
 
 (async () => {
   const browser = await chromium.launch({channel:'chrome',headless:true});
@@ -27,12 +30,13 @@ const supplier = 'https://hmru.ru/catalog/markirovochnoe_i_etiketirovochnoe_obor
     const status = card.getByRole('status').filter({hasText:'Импорт завершён'});
     await status.waitFor({timeout:180000});
     assert.doesNotMatch(await status.textContent(), /Пропущено/);
-    assert.match(await card.locator('[data-field="productName"]').inputValue(), /HLMT-280P/);
+    const model = otherSupplier ? /HKN-VAC260E/i : /HLMT-280P/i;
+    assert.match(await card.locator('[data-field="productName"]').inputValue(), model);
     const price = await card.locator('[data-field="price"]').inputValue();
     assert.ok(Number(price)>0);
     const specs = await card.locator('[data-field="specsText"]').inputValue();
-    assert.match(specs,/HUALIAN/i);
-    assert.match(await card.locator('.rich-editor').textContent(),/HLMT-280P/);
+    assert.match(specs,otherSupplier ? /Мощность/i : /HUALIAN/i);
+    assert.match(await card.locator('.rich-editor').textContent(),model);
     const photos = await page.evaluate(()=>state.products[0].photoIds.length);
     assert.ok(photos > 1);
     await page.waitForFunction(n=>document.querySelectorAll('#previewPages .product-photo-frame img').length === n,photos);

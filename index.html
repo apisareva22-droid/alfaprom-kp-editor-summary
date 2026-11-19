@@ -1810,7 +1810,7 @@ function attachSupplierImport(card) {
   const panel = document.createElement("div");
   panel.hidden = true;
   panel.className = "field";
-  panel.innerHTML = '<form style="display:flex;align-items:center;gap:8px"><input type="url" required aria-label="Ссылка на оборудование" placeholder="Ссылка на товар hmru.ru" style="border-radius:25px"><span aria-hidden="true">→</span><button class="btn btn-primary">Добавить</button></form><small role="status"></small>';
+  panel.innerHTML = '<form style="display:flex;align-items:center;gap:8px"><input type="url" required aria-label="Ссылка на оборудование" placeholder="Ссылка на товар на сайте поставщика" style="border-radius:25px"><span aria-hidden="true">→</span><button class="btn btn-primary">Добавить</button></form><small role="status"></small>';
   head.after(panel);
   toggle.setAttribute("aria-expanded", "false");
   toggle.onclick = () => {
@@ -1848,7 +1848,7 @@ function attachSupplierImport(card) {
     try {
       status.textContent = "Загружаем карточку…";
       const data = await request(form.querySelector("input").value.trim(), "product");
-      const photos = (data.images || []).filter(url => new URL(url).pathname.includes("/iblock/"));
+      const photos = data.images || [];
       for (const [index, url] of photos.entries()) {
         if (!card.isConnected) break;
         status.textContent = `Загружаем фото ${index + 1} из ${photos.length}…`;
@@ -1859,11 +1859,17 @@ function attachSupplierImport(card) {
       }
       if (!card.isConnected) throw new Error("Карточка изменилась во время импорта.");
       const changed = {};
-      for (const field of ["productName", "description", "specsText", "price"]) {
-        if (data[field] && !product[field] && (field !== "price" || product.currency === "RUB")) {
+      for (const field of ["productName", "description", "specsText"]) {
+        if (data[field] && !product[field]) {
           changed[field] = field === "description" ? "<p>" + escapeHtml(data[field]).replace(/\n/g, "<br>") + "</p>" : data[field];
         }
       }
+      if (data.price && !product.price && ["RUB", "USD", "EUR"].includes(data.currency)
+          && (!product.discountPrice || product.currency === data.currency)) {
+        changed.price = data.price;
+        changed.currency = data.currency;
+      }
+      const previous = Object.fromEntries(Object.keys(changed).map(key => [key, product[key]]));
       const first = product.photoIds.length;
       Object.assign(product, changed);
       saved.forEach((id, i) => {
@@ -1879,7 +1885,7 @@ function attachSupplierImport(card) {
           delete product.photoSizes[id];
           delete product.photoPositions[id];
         }
-        for (const field of Object.keys(changed)) product[field] = "";
+        Object.assign(product, previous);
         throw error;
       }
       saved.length = 0;
@@ -1888,7 +1894,11 @@ function attachSupplierImport(card) {
       const updated = [...document.querySelectorAll(".product-editor-card")].find(c => c.dataset.productId === product.id);
       const note = document.createElement("small");
       note.setAttribute("role", "status");
-      note.textContent = "Импорт завершён. Проверьте поля и цену." + (skipped ? " Пропущено фото: " + skipped : "");
+      const missing = [["productName", "название"], ["description", "описание"], ["specsText", "характеристики"], ["price", "цена"]]
+        .filter(([key]) => !product[key]).map(([, label]) => label);
+      if (!product.photoIds.length) missing.push("фото");
+      note.textContent = "Импорт завершён." + (missing.length ? " Заполните вручную: " + missing.join(", ") + "." : " Проверьте поля и цену.")
+        + (skipped ? " Пропущено фото: " + skipped : "");
       updated?.querySelector(".product-editor-head").after(note);
     } catch (error) {
       await Promise.all(saved.map(id => deletePhoto(id).catch(() => {})));
