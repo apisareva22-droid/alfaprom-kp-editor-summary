@@ -1799,6 +1799,28 @@ if (supplierEndpoint) {
   renderProductsEditor();
 }
 
+function mergeSupplierDescription(current, data, append = false) {
+  if (!data.description?.trim()) return current;
+  const host = document.createElement("div");
+  host.innerHTML = descriptionHtml(current);
+  const normalize = text => text.replace(/[\u200b\ufeff]/g, "").replace(/\s+/g, " ").trim();
+  const readable = host.cloneNode(true);
+  readable.querySelectorAll("br").forEach(br => br.replaceWith(" "));
+  const text = normalize(descriptionTextWithLists(readable.innerHTML));
+  const titleOnly = text && text === normalize(data.productName || "") && !host.querySelector("figure");
+  const imported = "<p>" + escapeHtml(data.description).replace(/\r?\n/g, "<br>") + "</p>";
+  if (text && !titleOnly) {
+    if (!append || text.includes(normalize(data.description))) return current;
+    return host.innerHTML + imported;
+  }
+  return host.querySelector("figure") ? host.innerHTML + imported : imported;
+}
+
+async function supplierPhotoFingerprint(blob) {
+  const bytes = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, "0")).join("");
+}
+
 function attachSupplierImport(card) {
   const product = state.products.find(item => item.id === card.dataset.productId);
   const head = card.querySelector(".product-editor-head");
@@ -1849,21 +1871,32 @@ function attachSupplierImport(card) {
       status.textContent = "Загружаем карточку…";
       const data = await request(form.querySelector("input").value.trim(), "product");
       const photos = data.images || [];
+      const existingPhotos = new Set();
+      if (photos.length) {
+        for (const id of product.photoIds) {
+          const photo = await getPhoto(id);
+          if (photo) existingPhotos.add(await supplierPhotoFingerprint(photo));
+        }
+      }
       for (const [index, url] of photos.entries()) {
         if (!card.isConnected) break;
         status.textContent = `Загружаем фото ${index + 1} из ${photos.length}…`;
         try {
           const blob = await request(url, "image");
-          saved.push(await savePhoto(await preparePhoto(blob)));
+          const photo = await preparePhoto(blob);
+          if (existingPhotos.size && existingPhotos.has(await supplierPhotoFingerprint(photo))) continue;
+          saved.push(await savePhoto(photo));
         } catch { skipped++; }
       }
       if (!card.isConnected) throw new Error("Карточка изменилась во время импорта.");
       const changed = {};
-      for (const field of ["productName", "description", "specsText"]) {
+      for (const field of ["productName", "specsText"]) {
         if (data[field] && !product[field]) {
-          changed[field] = field === "description" ? "<p>" + escapeHtml(data[field]).replace(/\n/g, "<br>") + "</p>" : data[field];
+          changed[field] = data[field];
         }
       }
+      const description = mergeSupplierDescription(product.description, data);
+      if (description !== product.description) changed.description = description;
       if (data.price && !product.price && ["RUB", "USD", "EUR"].includes(data.currency)
           && (!product.discountPrice || product.currency === data.currency)) {
         changed.price = data.price;
@@ -1900,6 +1933,26 @@ function attachSupplierImport(card) {
       note.textContent = "Импорт завершён." + (missing.length ? " Заполните вручную: " + missing.join(", ") + "." : " Проверьте поля и цену.")
         + (skipped ? " Пропущено фото: " + skipped : "");
       updated?.querySelector(".product-editor-head").after(note);
+      if (mergeSupplierDescription(product.description, data, true) !== product.description) {
+        const append = document.createElement("button");
+        append.type = "button";
+        append.className = "small-btn";
+        append.textContent = "Дополнить моё описание текстом поставщика";
+        note.after(append);
+        append.onclick = () => {
+          const before = product.description;
+          product.description = mergeSupplierDescription(before, data, true);
+          try {
+            saveState();
+          } catch (error) {
+            product.description = before;
+            note.textContent = error.message;
+            return;
+          }
+          renderProductsEditor();
+          renderPreview();
+        };
+      }
     } catch (error) {
       await Promise.all(saved.map(id => deletePhoto(id).catch(() => {})));
       status.textContent = error.message;

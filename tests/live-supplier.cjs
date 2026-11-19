@@ -36,9 +36,25 @@ const supplier = suppliers[process.env.SUPPLIER || 'hmru'];
     }
     await page.goto(process.env.TEST_URL || site);
     const card = page.locator('.product-editor-card').first();
-    await card.getByRole('button',{name:'Добавить оборудование по ссылке'}).click();
-    await card.getByRole('textbox',{name:'Ссылка на оборудование'}).fill(supplier.url);
-    await card.getByRole('button',{name:'Добавить',exact:true}).click();
+    const field = card.locator('.rich-editor');
+    const isVassilii = supplier === suppliers.vassilii;
+    if (isVassilii) {
+      // Old imports stored the equipment title as a formatted, nonempty description.
+      await card.locator('[data-field="productName"]').fill('Запайщик лотков VASSILII');
+      await field.fill('Запайщик лотков VASSILII');
+      await page.reload();
+    }
+    async function importEquipment() {
+      await card.getByRole('button',{name:'Добавить оборудование по ссылке'}).click();
+      await card.getByRole('textbox',{name:'Ссылка на оборудование'}).fill(supplier.url);
+      const metadata = page.waitForResponse(response => {
+        const url = new URL(response.url());
+        return response.ok() && url.searchParams.get('type') === 'product' && url.searchParams.get('url') === supplier.url;
+      });
+      await card.getByRole('button',{name:'Добавить',exact:true}).click();
+      return (await metadata).json();
+    }
+    const imported = await importEquipment();
     const status = card.getByRole('status').filter({hasText:'Импорт завершён'});
     await status.waitFor({timeout:180000});
     assert.doesNotMatch(await status.textContent(), /Пропущено/);
@@ -54,6 +70,25 @@ const supplier = suppliers[process.env.SUPPLIER || 'hmru'];
     const preview = await page.locator('#previewPages').innerText();
     assert.match(preview,supplier.description);
     assert.match(preview,supplier.spec);
+    if (isVassilii) {
+      const norm = text => text.replace(/\s+/g, ' ').trim();
+      const full = norm(imported.description);
+      assert.match(full, /^Аппарат для ручной запайки контейнеров Vassilii/);
+      assert.match(full, /через короткое время исчезнет\.$/);
+      assert.equal(norm(await field.innerText()),full);
+      const previewDescription = page.locator('#previewPages .kp-description');
+      assert.equal(norm((await previewDescription.allInnerTexts()).join(' ')),full);
+      const photoIds = await page.evaluate(()=>state.products[0].photoIds);
+      await field.fill('Комментарий менеджера.');
+      const append = card.getByRole('button',{name:'Дополнить моё описание текстом поставщика'});
+      await importEquipment();
+      await append.waitFor({timeout:180000});
+      assert.equal(await field.innerText(),'Комментарий менеджера.');
+      await append.click();
+      await page.reload();
+      assert.equal(norm(await field.innerText()),'Комментарий менеджера. '+full);
+      assert.deepEqual(await page.evaluate(()=>state.products[0].photoIds),photoIds);
+    }
     if (process.env.IMPORT_SCREENSHOT) await card.locator('.product-editor-head').screenshot({path:process.env.IMPORT_SCREENSHOT});
     console.log({price, photos, characteristics:specs.split('\n').length});
   } finally { await browser.close(); }
